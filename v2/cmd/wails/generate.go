@@ -92,7 +92,7 @@ func generateWebBindings(f *flags.GenerateWebBindings) error {
 	for _, service := range catalog.Services {
 		printBulletPoint(fmt.Sprintf("· %s.%s (%d methods)", service.Namespace, service.Struct, len(service.Methods)))
 	}
-	printBulletPoint("Web runtime bootstrap: extracted into the wailsjs dir (wasm/wasm-bridge.js, wasm/go-exec.js)")
+	printBulletPoint("Web runtime bootstrap: extracted into the wailsjs dir (wasm/wasm-bridge.js, wasm/wails-runtime.js, wasm/go-exec.js)")
 	pterm.Println()
 	return nil
 }

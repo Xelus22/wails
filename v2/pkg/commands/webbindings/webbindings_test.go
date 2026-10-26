@@ -60,7 +60,8 @@ func TestCatalogFromStore(t *testing.T) {
 	catalog := Catalog{}
 	namespaces := sortedKeys(store)
 	for _, ns := range namespaces {
-		for structName := range store[ns] {
+		structNames := sortedKeys(store[ns])
+		for _, structName := range structNames {
 			names := sortedKeys(store[ns][structName])
 			catalog.Services = append(catalog.Services, Service{Namespace: ns, Struct: structName, Methods: names})
 		}

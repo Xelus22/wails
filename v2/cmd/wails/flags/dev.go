@@ -20,6 +20,7 @@ type Dev struct {
 	Extensions           string `flag:"e" description:"Extensions to trigger rebuilds (comma separated) eg go"`
 	ReloadDirs           string `flag:"reloaddirs" description:"Additional directories to trigger reloads (comma separated)"`
 	Browser              bool   `flag:"browser" description:"Open the application in a browser"`
+	Platform             string `name:"platform" description:"Target platform. Only 'web' is currently supported (web (WASM) flavor)"`
 	NoReload             bool   `flag:"noreload" description:"Disable reload on asset change"`
 	NoColour             bool   `flag:"nocolor" description:"Disable colour in output"`
 	NoGoRebuild          bool   `flag:"nogorebuild" description:"Disable automatic rebuilding on backend file changes/additions"`
@@ -53,6 +54,10 @@ func (d *Dev) Process() error {
 	err = d.loadAndMergeProjectConfig()
 	if err != nil {
 		return err
+	}
+
+	if d.Platform != "" && !build.IsWebPlatform(d.Platform) {
+		return fmt.Errorf("platform '%s' is not supported for wails dev - only 'web' is", d.Platform)
 	}
 
 	if _, _, err := net.SplitHostPort(d.DevServer); err != nil {

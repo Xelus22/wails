@@ -155,12 +155,24 @@ func buildApplication(f *flags.Build) error {
 
 	outputBinaries := map[string]string{}
 
+	// Web (WASM) targets run an entirely different pipeline (js/wasm
+	// webbridge compile + bindings probe + static dist). They are collected
+	// and executed after the desktop targets so a multi-target build always
+	// finishes with the wasm artifact being written into the fresh dist
+	// (frontend builds may wipe the dist directory).
+	var webTargets []string
+
 	// Allows cancelling the build after the first error. It would be nice if targets.Each would support funcs
 	// returning an error.
 	var targetErr error
 	targets := f.GetTargets()
 	targets.Each(func(platform string) {
 		if targetErr != nil {
+			return
+		}
+
+		if build.IsWebPlatform(platform) {
+			webTargets = append(webTargets, platform)
 			return
 		}
 
@@ -257,6 +269,42 @@ func buildApplication(f *flags.Build) error {
 
 	if targetErr != nil {
 		return targetErr
+	}
+
+	// Build the web (WASM) targets after the desktop ones: the frontend
+	// build of the desktop targets may wipe the shared dist directory and
+	// the wasm artifact must be (re)written into it last. The web build
+	// reuses the frontend build that already ran (IgnoreFrontend is flipped
+	// by the desktop loop after its first success). All web aliases
+	// (`web`, `js/wasm`, `wasm`) produce the same artifact, so the pipeline
+	// runs at most once.
+	if len(webTargets) > 1 {
+		pterm.Warning.Println("multiple web targets given — building the web target once")
+	}
+	if len(webTargets) > 0 {
+		start := time.Now()
+
+		pterm.DefaultSection.Println("Building target: web (WASM)")
+
+		if f.Upx {
+			pterm.Warning.Println("upx: nothing to compress for the web target — ignored")
+		}
+		if f.OutputFilename != "" {
+			pterm.Warning.Println("-o is ignored for the web target — the bootstrap expects <frontend dist>/wasm/app.wasm")
+		}
+
+		if f.DryRun {
+			pterm.Info.Println("Dry run: skipped web build.")
+		} else {
+			result, err := build.WebBuild(buildOptions)
+			if err != nil {
+				pterm.Error.Println(err.Error())
+				return err
+			}
+			buildOptions.Logger.Println("%s", fmt.Sprintf("Built '%s' in %s.\n", result.WasmPath, time.Since(start).Round(time.Millisecond).String()))
+			pterm.Info.Println("Serve with: `wails dev -platform web` or any static file server rooted at " + result.DistDirectory)
+			outputBinaries["web"] = result.WasmPath
+		}
 	}
 
 	if f.DryRun {

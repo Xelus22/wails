@@ -41,6 +41,11 @@ type Options struct {
 	ProjectDirectory string
 	SkipVerify       bool
 	PrintJSON        bool
+	// ObjectPath, when set, points at an already-compiled js/wasm webbridge
+	// module (e.g. the final `wails build -platform web` artifact). The
+	// engine then skips its own compilation and probes that object instead,
+	// leaving it untouched for use in the browser.
+	ObjectPath string
 }
 
 // Catalog is the parsed generator output.
@@ -78,27 +83,33 @@ func GenerateWebBindings(options Options) (Catalog, error) {
 	webTags := lo.Without(tags, "desktop", "production", "debug", "dev")
 	tagString := buildtags.Stringify(webTags)
 
-	// Build the js/wasm module -------------------------------------------------
+	// Build the js/wasm module (unless the caller supplies the final
+	// artifact, e.g. `wails build -platform web` compiles it itself and
+	// reuses it for the probe) --------------------------------------------
 	compiler := lo.CoalesceOrEmpty(options.Compiler, "go")
-	tempFile, err := os.CreateTemp(os.TempDir(), "wails-webbindings-*.wasm")
-	if err != nil {
-		return catalog, err
-	}
-	tempObjectPath := tempFile.Name()
-	_ = tempFile.Close()
-	defer func() { _ = os.Remove(tempObjectPath) }()
+	tempObjectPath := ""
+	if options.ObjectPath == "" {
+		tempFile, err := os.CreateTemp(os.TempDir(), "wails-webbindings-*.wasm")
+		if err != nil {
+			return catalog, err
+		}
+		tempObjectPath = tempFile.Name()
+		_ = tempFile.Close()
+		defer func() { _ = os.Remove(tempObjectPath) }()
 
-	envBuild := os.Environ()
-	envBuild = shell.SetEnv(envBuild, "GOOS", "js")
-	envBuild = shell.SetEnv(envBuild, "GOARCH", "wasm")
-	envBuild = shell.SetEnv(envBuild, "CGO_ENABLED", "0")
-	envBuild = shell.RemoveEnv(envBuild, "CC")
+		envBuild := os.Environ()
+		envBuild = shell.SetEnv(envBuild, "GOOS", "js")
+		envBuild = shell.SetEnv(envBuild, "GOARCH", "wasm")
+		envBuild = shell.SetEnv(envBuild, "CGO_ENABLED", "0")
+		envBuild = shell.RemoveEnv(envBuild, "CC")
 
-	stdout, stderr, err := shell.RunCommandWithEnv(envBuild, workingDirectory, compiler,
-		"build", "-buildvcs=false", "-tags", tagString, "-o", tempObjectPath, ".")
-	if err != nil {
-		return catalog, fmt.Errorf("failed to build the WASM backend with the webbridge tag:\n%s\n%s", stdout, stderr)
+		stdout, stderr, err := shell.RunCommandWithEnv(envBuild, workingDirectory, compiler,
+			"build", "-buildvcs=false", "-tags", tagString, "-o", tempObjectPath, ".")
+		if err != nil {
+			return catalog, fmt.Errorf("failed to build the WASM backend with the webbridge tag:\n%s\n%s", stdout, stderr)
+		}
 	}
+	objectPath := lo.CoalesceOrEmpty(options.ObjectPath, tempObjectPath)
 
 	// Run it under Node and harvest the bindings database -----------------------
 	nodePath, nodeErr := exec.LookPath("node")
@@ -114,7 +125,7 @@ func GenerateWebBindings(options Options) (Catalog, error) {
 		return catalog, fmt.Errorf("cannot find %s — is the js/wasm toolchain installed for this Go version?", wasmExecPath)
 	}
 
-	sentinelJSON, runOutput, err := runBindingsProbe(nodePath, wasmExecPath, tempObjectPath, workingDirectory, options)
+	sentinelJSON, runOutput, err := runBindingsProbe(nodePath, wasmExecPath, objectPath, workingDirectory, options)
 	if err != nil {
 		return catalog, err
 	}
@@ -156,24 +167,51 @@ func GenerateWebBindings(options Options) (Catalog, error) {
 	}
 
 	// Install the browser bootstrap --------------------------------------------
-	wasmDir := filepath.Join(wailsjsDir, "..", "wasm")
-	if err := fs.MkDirs(wasmDir); err != nil {
-		return catalog, err
-	}
-	extractor := gosod.New(webwrapper.WebWrapper)
-	if err := extractor.Extract(wasmDir, nil); err != nil {
-		return catalog, err
-	}
-	execSource, err := os.ReadFile(wasmExecPath)
-	if err != nil {
-		return catalog, err
-	}
-	if err := os.WriteFile(filepath.Join(wasmDir, "go-exec.js"), execSource, 0o644); err != nil {
+	if err := InstallWebBootstrap(workingDirectory, compiler); err != nil {
 		return catalog, err
 	}
 
 	_ = runOutput // remain silent when everything is fine
 	return catalog, nil
+}
+
+// InstallWebBootstrap copies the browser bootstrap into
+// <WailsJSDir>/wailsjs/wasm: the embedded wasm-bridge.js, wails-runtime.js and
+// WASM_README.txt, plus the compiler toolchain's lib/wasm/wasm_exec.js as
+// go-exec.js. It is safe to run before the frontend build (a vite build
+// resolves `wailsjs/wasm/*` imports) and is idempotent.
+func InstallWebBootstrap(projectDirectory, compiler string) error {
+	workingDirectory, _ := lo.Coalesce(projectDirectory, lo.Must(os.Getwd()))
+
+	projectConfig, err := project.Load(workingDirectory)
+	if err != nil {
+		return err
+	}
+	// Desktop parity: the web artifacts live next to the generated bindings
+	// (<...>/wailsjs/wasm).
+	wasmDir := filepath.Join(projectConfig.GetWailsJSDir(), "wailsjs", "wasm")
+	if err := fs.MkDirs(wasmDir); err != nil {
+		return err
+	}
+	extractor := gosod.New(webwrapper.WebWrapper)
+	if err := extractor.Extract(wasmDir, nil); err != nil {
+		return err
+	}
+
+	compilerName := lo.CoalesceOrEmpty(compiler, "go")
+	goroot, goRootErr := queryGoRoot(workingDirectory, compilerName)
+	if goRootErr != nil {
+		return goRootErr
+	}
+	wasmExecPath := filepath.Join(goroot, "lib", "wasm", "wasm_exec.js")
+	if !fs.FileExists(wasmExecPath) {
+		return fmt.Errorf("cannot find %s — is the js/wasm toolchain installed for this Go version?", wasmExecPath)
+	}
+	execSource, err := os.ReadFile(wasmExecPath)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(wasmDir, "go-exec.js"), execSource, 0o644)
 }
 
 // runBindingsProbe executes the wasm module under Node with
