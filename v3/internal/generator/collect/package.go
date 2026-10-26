@@ -275,6 +275,21 @@ func (info *PackageInfo) recordService(obj *types.TypeName) *ServiceInfo {
 	return service.(*ServiceInfo)
 }
 
+// Services calls yield for each service recorded for this package.
+//
+// Call it only once all collected information for this package has been
+// generated, e.g. after [Collector.Iterate] yielded the receiver after
+// the generator has finished. Services yielded from this method must be
+// [ServiceInfo.Collect]ed before their fields are accessed.
+//
+// Services is safe for concurrent use.
+// The iteration order is unspecified.
+func (info *PackageInfo) Services(yield func(service *ServiceInfo) bool) {
+	info.services.Range(func(_, value any) bool {
+		return yield(value.(*ServiceInfo))
+	})
+}
+
 // recordModel adds the given model type object
 // to the set of models generated for this package.
 // It returns the unique [ModelInfo] instance associated

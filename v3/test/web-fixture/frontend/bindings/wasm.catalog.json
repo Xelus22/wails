@@ -1,0 +1,41 @@
+{
+  "goos": "js",
+  "goarch": "wasm",
+  "services": [
+    {
+      "fqn": "main.Dummy",
+      "methods": [
+        {
+          "fqn": "main.Dummy.Ping",
+          "id": "141153708"
+        }
+      ]
+    },
+    {
+      "fqn": "main.Settings",
+      "methods": [
+        {
+          "fqn": "main.Settings.Fail",
+          "id": "65539639"
+        },
+        {
+          "fqn": "main.Settings.GetTheme",
+          "id": "2292196002"
+        },
+        {
+          "fqn": "main.Settings.SetName",
+          "id": "165854050"
+        }
+      ]
+    },
+    {
+      "fqn": "main.WebOnly",
+      "methods": [
+        {
+          "fqn": "main.WebOnly.FlushQueue",
+          "id": "24250257"
+        }
+      ]
+    }
+  ]
+}

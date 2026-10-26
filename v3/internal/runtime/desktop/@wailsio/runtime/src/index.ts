@@ -59,6 +59,14 @@ export {
 };
 
 /**
+ * Activates the Wasm bridge transport for web (js/wasm) builds.
+ * The bootstrap glue calls this once the WASM backend module is live.
+ *
+ * @ignore — a build-system hook, exercised by the Wasm webbridge.
+ */
+export { activateWasmBridge, isWasm, isBridgeLive } from "./wasm.js";
+
+/**
  * An internal utility consumed by the binding generator.
  *
  * @ignore

@@ -25,6 +25,8 @@ type GenerateBindingsOptions struct {
 	Silent            bool   `name:"silent" description:"Silent mode"`
 	Verbose           bool   `name:"v" description:"Enable debug output"`
 	Clean             bool   `name:"clean" description:"Clean output directory before generation" default:"true"`
+	Wasm              bool   `name:"wasm" description:"Analyse packages for the js/wasm web build (GOOS=js GOARCH=wasm). Services from _wasm variants and web-only packages are included; afterwards the native analysis is re-run and differences between the two binding surfaces are reported"`
+	WasmCatalog       bool   `name:"wasm-catalog" description:"Emit wasm.catalog.json into the output directory: a machine-readable catalog of services, methods and binding IDs. Catalogues the wasm graph when combined with --wasm, otherwise the native graph"`
 }
 
 var ErrUnmatchedQuote = errors.New("build flags contain an unmatched quote")

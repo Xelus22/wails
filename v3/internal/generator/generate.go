@@ -113,6 +113,15 @@ func (generator *Generator) Generate(patterns ...string) (stats *collect.Stats, 
 		return
 	}
 
+	// Package environment override: in wasm mode packages are analysed with
+	// the js/wasm toolchain environment, mirroring the environment the
+	// `wails3 build` web backend uses. This makes `_wasm` variants and
+	// web-only packages part of the analysed graph.
+	envOverride := []string(nil)
+	if generator.options.Wasm {
+		envOverride = WasmPackageEnv()
+	}
+
 	// Start package loading feedback.
 	var lpkgMutex sync.Mutex
 	generator.logger.Statusf("Loading packages...")
@@ -124,13 +133,13 @@ func (generator *Generator) Generate(patterns ...string) (stats *collect.Stats, 
 		}
 	}()
 
-	systemPaths, err := ResolveSystemPaths(buildFlags)
+	systemPaths, err := ResolveSystemPathsInEnv(envOverride, buildFlags)
 	if err != nil {
 		return
 	}
 
 	// Load initial packages.
-	pkgs, err := LoadPackages(buildFlags, patterns...)
+	pkgs, err := LoadPackagesInEnv(envOverride, buildFlags, patterns...)
 
 	// Suppress package loading feedback.
 	lpkgMutex.Lock()
@@ -241,6 +250,18 @@ func (generator *Generator) Generate(patterns ...string) (stats *collect.Stats, 
 	generator.logger.Statusf("Collecting stats...")
 	for info := range generator.collector.Iterate {
 		stats.Add(info.Stats())
+	}
+
+	// Post-generation wasm-mode features:
+	//   - report binding surface drift between the wasm analysis (used above)
+	//     and the native one, so a single bindings tree can serve both targets;
+	//   - emit the machine-readable catalog for the web runtime.
+	if generator.options.Wasm {
+		generator.logger.Statusf("Comparing wasm bindings against the native analysis...")
+		generator.compareAgainstNative(patterns, buildFlags)
+	}
+	if generator.options.WasmCatalog {
+		generator.generateWasmCatalog()
 	}
 
 	// Return non-empty error report.

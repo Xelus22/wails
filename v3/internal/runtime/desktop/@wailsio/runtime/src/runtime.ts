@@ -10,6 +10,10 @@ The electron alternative for Go
 
 import { nanoid } from "./nanoid.js";
 import { hasDOM } from "./environment.js";
+import { errorFromCallJSON, type CallErrorType, RuntimeError } from "./callerror.js";
+import { bridgeModeTransport, isWasm, routeInWasm } from "./wasm.js";
+
+export type { CallErrorType } from "./callerror.js";
 
 // Resolved lazily: window does not exist when the module is imported during
 // server-side rendering (#4679), and nothing can call the runtime there.
@@ -23,27 +27,11 @@ const CHUNK_THRESHOLD = 512 * 1024;
 // Re-export nanoid for custom transport implementations
 export { nanoid };
 
-type CallErrorType = {
-    message: string,
-    cause?: unknown,
-    kind: "ReferenceError" | "TypeError" | "RuntimeError"
-}
-
 /**
  * Exception class that will be thrown in case the bound method returns an error.
  * The value of the {@link RuntimeError#name} property is "RuntimeError".
  */
-export class RuntimeError extends Error {
-    /**
-     * Constructs a new RuntimeError instance.
-     * @param message - The error message.
-     * @param options - Options to be forwarded to the Error constructor.
-     */
-    constructor(message?: string, options?: ErrorOptions) {
-        super(message, options);
-        this.name = "RuntimeError";
-    }
-}
+export { RuntimeError } from "./callerror.js";
 
 // Object Names
 export const objectNames = Object.freeze({
@@ -131,6 +119,14 @@ export function newRuntimeCaller(object: number, windowName: string = '') {
 }
 
 async function runtimeCallWithID(objectID: number, method: number, windowName: string, args: any): Promise<any> {
+    // Wasm bridge mode: pages hosting a js/wasm backend have no HTTP
+    // dev server; route through the bridge (buffering until it boots).
+    // The bridge wins even over user transports: there is nothing to
+    // fall back to in this mode.
+    if (bridgeModeTransport() || isWasm()) {
+        return routeInWasm(objectID, method, windowName, args)!;
+    }
+
     // Use custom transport if available
     if (customTransport) {
         return customTransport.call(objectID, method, windowName, args);
@@ -166,15 +162,7 @@ async function runtimeCallWithID(objectID: number, method: number, windowName: s
       const ct = response.headers.get("Content-Type");
       if (ct?.includes("application/json")) {
           const json: CallErrorType = await response.json();
-          let err;
-          switch (json.kind) {
-              case "ReferenceError": err = new ReferenceError(json.message); break;
-              case "TypeError":      err = new TypeError(json.message); break;
-              case "RuntimeError":   err = new RuntimeError(json.message); break;
-              default:               err = new Error(json.message);
-          }
-          err.cause = json.cause;
-          throw err
+          throw errorFromCallJSON(json);
       }
       throw new Error(await response.text());
     }
