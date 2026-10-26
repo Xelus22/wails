@@ -17,6 +17,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/clilogger"
 	"github.com/wailsapp/wails/v2/pkg/commands/bindings"
 	"github.com/wailsapp/wails/v2/pkg/commands/buildtags"
+	"github.com/wailsapp/wails/v2/pkg/commands/webbindings"
 )
 
 func generateModule(f *flags.GenerateModule) error {
@@ -57,6 +58,42 @@ func generateModule(f *flags.GenerateModule) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func generateWebBindings(f *flags.GenerateWebBindings) error {
+	if f.NoColour {
+		pterm.DisableColor()
+		colour.ColourEnabled = false
+	}
+
+	buildTags, err := buildtags.Parse(f.Tags)
+	if err != nil {
+		return err
+	}
+
+	pterm.DefaultSection.Println("Generating web (WASM) bindings")
+
+	catalog, err := webbindings.GenerateWebBindings(webbindings.Options{
+		Compiler:   f.Compiler,
+		Tags:       buildTags,
+		SkipVerify: f.SkipVerify,
+		PrintJSON:  f.PrintJSON,
+	})
+	if err != nil {
+		return err
+	}
+
+	total := 0
+	for _, service := range catalog.Services {
+		total += len(service.Methods)
+	}
+	printBulletPoint("Bindings catalog: %d services, %d methods", len(catalog.Services), total)
+	for _, service := range catalog.Services {
+		printBulletPoint(fmt.Sprintf("· %s.%s (%d methods)", service.Namespace, service.Struct, len(service.Methods)))
+	}
+	printBulletPoint("Web runtime bootstrap: extracted into the wailsjs dir (wasm/wasm-bridge.js, wasm/go-exec.js)")
+	pterm.Println()
 	return nil
 }
 

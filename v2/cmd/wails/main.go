@@ -84,6 +84,7 @@ func main() {
 
 	generate := app.NewSubCommand("generate", "Code Generation Tools")
 	generate.NewSubCommandFunction("module", "Generates a new Wails module", generateModule)
+	generate.NewSubCommandFunction("webbindings", "Generates and verifies the web (WASM) bindings runtime", generateWebBindings)
 	generate.NewSubCommandFunction("template", "Generates a new Wails template", generateTemplate)
 
 	command := app.NewSubCommand("version", "The Wails CLI version")

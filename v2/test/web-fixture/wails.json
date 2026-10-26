@@ -1,0 +1,6 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "web-fixture",
+  "outputfilename": "web-fixture",
+  "version": "2"
+}
