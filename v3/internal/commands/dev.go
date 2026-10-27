@@ -18,9 +18,18 @@ type DevOptions struct {
 	Config   string `description:"The config file including path" default:"./build/config.yml"`
 	VitePort int    `name:"port" description:"Specify the vite dev server port"`
 	Secure   bool   `name:"s" description:"Enable HTTPS"`
+	Platform string `name:"platform" description:"Target platform. Only 'web' (aliases: js/wasm, wasm) is currently supported — the js/wasm WebAssembly dev server"`
+	Browser  bool   `name:"browser" description:"Open the application in a browser (web target only)"`
 }
 
 func Dev(options *DevOptions) error {
+	if err := validateWebPlatform(options.Platform, "wails3 dev"); err != nil {
+		return err
+	}
+	if IsWebPlatform(options.Platform) {
+		return webDevApplication(options)
+	}
+
 	host := "localhost"
 
 	// flag takes precedence over environment variable

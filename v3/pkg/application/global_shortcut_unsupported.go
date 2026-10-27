@@ -1,4 +1,4 @@
-//go:build ios || android || server || (linux && !cgo)
+//go:build ios || android || server || js || (linux && !cgo)
 
 package application
 

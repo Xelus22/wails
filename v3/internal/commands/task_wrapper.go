@@ -66,6 +66,18 @@ func mergeTags(tags string, extra ...string) string {
 }
 
 func Build(buildFlags *flags.Build, otherArgs []string) error {
+	if err := validateWebPlatform(buildFlags.Platform, "wails3 build"); err != nil {
+		return err
+	}
+	if IsWebPlatform(buildFlags.Platform) {
+		_, err := WebBuild(&WebBuildOptions{
+			Tags:       buildFlags.Tags,
+			Obfuscated: buildFlags.Obfuscated,
+			GarbleArgs: buildFlags.GarbleArgs,
+		})
+		return err
+	}
+
 	buildFlags.Tags = mergeTags(buildFlags.Tags, envTags()...)
 	if buildFlags.Tags != "" {
 		otherArgs = append(otherArgs, "EXTRA_TAGS="+buildFlags.Tags)
